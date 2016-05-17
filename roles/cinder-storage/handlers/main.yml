@@ -1,0 +1,10 @@
+---
+# handlers file for cinder-storage
+- name: restart lvm2 metadata service
+  service: name=lvm2-lvmetad state=restarted enabled=yes
+
+- name: restart cinder volume services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+    - openstack-cinder-volume
+    - target

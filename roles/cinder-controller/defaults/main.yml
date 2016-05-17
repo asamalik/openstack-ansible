@@ -1,0 +1,8 @@
+---
+# defaults file for cinder-controller
+mysql_root_password: redhat
+controller_ip: 10.0.0.11
+cinder_password: redhat
+rabbit_password: redhat
+controller_hostname: controller
+cinder_db_password: redhat

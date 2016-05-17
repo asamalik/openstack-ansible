@@ -1,0 +1,97 @@
+---
+# tasks file for nova-compute
+- name: packages
+  yum: name={{ item }} state=present
+  with_items:
+    - openstack-nova-compute
+    - sysfsutils
+
+- name: configuration
+  ini_file:
+      dest: /etc/nova/nova.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: DEFAULT
+      k: rpc_backend
+      v: rabbit
+    - s: oslo_messaging_rabbit
+      k: rabbit_host
+      v: "{{ controller_hostname }}"
+    - s: oslo_messaging_rabbit
+      k: rabbit_userid
+      v: openstack
+    - s: oslo_messaging_rabbit
+      k: rabbit_password
+      v: "{{ rabbit_password }}"
+    - s: DEFAULT
+      k: auth_strategy
+      v: keystone
+    - s: keystone_authtoken
+      k: auth_uri
+      v: http://{{ controller_hostname }}:5000
+    - s: keystone_authtoken
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: keystone_authtoken
+      k: auth_plugin
+      v: password
+    - s: keystone_authtoken
+      k: project_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: user_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: project_name
+      v: service
+    - s: keystone_authtoken
+      k: username
+      v: nova
+    - s: keystone_authtoken
+      k: password
+      v: "{{ nova_password }}"
+    - s: DEFAULT
+      k: my_ip
+      v: "{{ compute_ip }}"
+    - s: DEFAULT
+      k: network_api_class
+      v: nova.network.neutronv2.api.API
+    - s: DEFAULT
+      k: security_group_api
+      v: neutron
+    - s: DEFAULT
+      k: linuxnet_interface_driver
+      v: nova.network.linux_net.NeutronLinuxBridgeInterfaceDriver
+    - s: DEFAULT
+      k: firewall_driver
+      v: nova.virt.firewall.NoopFirewallDriver
+    - s: vnc
+      k: enabled
+      v: "True"
+    - s: vnc
+      k: vncserver_listen
+      v: 0.0.0.0
+    - s: vnc
+      k: vncserver_proxyclient_address
+      v: "{{ compute_ip }}"
+    - s: vnc
+      k: novncproxy_base_url
+      v: http://{{ controller_hostname }}:6080/vnc_auto.html
+    - s: glance
+      k: host
+      v: "{{ controller_hostname }}"
+    - s: oslo_concurrency
+      k: lock_path
+      v: /var/lib/nova/tmp
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+    - s: libvirt
+      k: virt_type
+      v: qemu
+  notify:
+    - restart and enable compute services
+
+- meta: flush_handlers

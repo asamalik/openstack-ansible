@@ -1,0 +1,3 @@
+---
+# defaults file for rabbit
+rabbit_password: "redhat"

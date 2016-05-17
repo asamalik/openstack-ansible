@@ -1,0 +1,7 @@
+---
+# handlers file for nova-compute
+- name: restart and enable compute services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+      - libvirtd
+      - openstack-nova-compute

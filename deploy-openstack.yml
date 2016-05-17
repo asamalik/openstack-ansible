@@ -1,0 +1,32 @@
+---
+
+- name: controller node
+  hosts: controller
+  sudo: yes
+  roles:
+    - controller-basic
+    - sql-database
+    - rabbit
+    - keystone
+    - glance
+    - nova-controller
+    - neutron-controller
+    - dashboard
+    - cinder-controller
+
+
+- name: compute node
+  hosts: compute1
+  sudo: yes
+  roles:
+    - controller-basic
+    - nova-compute
+    - neutron-compute
+
+
+- name: storage node
+  hosts: storage1
+  sudo: yes
+  roles:
+    - controller-basic
+    - cinder-storage

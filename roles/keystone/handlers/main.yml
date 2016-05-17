@@ -1,0 +1,14 @@
+---
+# handlers file for keystone
+- name: restart and enable memcached service
+  service: name="memcached" state=started enabled=yes
+
+- name: populate the identity service database
+  sudo: yes
+  sudo_user: keystone
+  command: 'keystone-manage db_sync'
+  notify:
+    - restart and enable httpd service
+
+- name: restart and enable httpd service
+  service: name=httpd state=restarted enabled=yes

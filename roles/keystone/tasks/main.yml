@@ -1,0 +1,137 @@
+---
+# tasks file for keystone
+- name: Install packages
+  yum: name={{ item }} state=present
+  with_items:
+    - "openstack-keystone"
+    - httpd
+    - mod_wsgi
+    - memcached
+    - "python-memcached"
+    - "python-keystoneclient"
+  notify:
+    - restart and enable memcached service
+
+- meta: flush_handlers
+
+- name: add keystone database
+  mysql_db: login_user=root login_password={{ mysql_root_password }}
+            db=keystone
+            state=present
+
+- name: grant access to the keystone database
+  mysql_user:
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+      name: keystone
+      password: "{{ keystone_db_password }}"
+      host: "{{ controller_hostname }}"
+      priv: "keystone.*:ALL,grant"
+      state: "present"
+
+
+# WARNING: Admin token should be disabled before using in production!
+# Memcached is used as a caching service
+
+- name: configuration
+  ini_file:
+      dest: /etc/keystone/keystone.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+      - s: "DEFAULT"
+        k: admin_token
+        v: "{{ keystone_admin_token }}"
+      - s: database
+        k: connection
+        v: "mysql://keystone:{{ keystone_db_password }}@{{ controller_hostname }}/keystone"
+      - s: memcache
+        k: servers
+        v: "{{ controller_hostname }}:11211"
+      - s: token
+        k: provider
+        v: uuid
+      - s: token
+        k: driver
+        v: memcache
+      - s: revoke
+        k: driver
+        v: sql
+  notify:
+      - populate the identity service database
+
+# The dashboard will use httpd as a web server
+
+- name: set the servername in httpd
+  lineinfile:
+      dest: /etc/httpd/conf/httpd.conf
+      regexp: "^ServerName "
+      line: "ServerName {{ controller_hostname }}"
+  notify:
+    - restart and enable httpd service
+
+- name: copy httpd config
+  copy:
+      src: wsgi-keystone.conf
+      dest: /etc/httpd/conf.d/wsgi-keystone.conf
+  notify:
+    - restart and enable httpd service
+
+- meta: flush_handlers
+
+
+# Every OpenStack service needs to be registered in Keystone
+
+- name: add keystone service
+  keystone_service:
+      name: keystone
+      description: "OpenStack Identity"
+      token: "{{ keystone_admin_token }}"
+      service_type: identity
+      state: present
+
+
+# And every OpenStack service needs three endpoints to be registered
+#   - public
+#   - internal
+#   - admin
+
+- name: add keystone endpoints
+  keystone_endpoint:
+      service_name: keystone
+      region: RegionOne
+      public_url: http://{{ controller_hostname }}:5000/v2.0
+      admin_url: http://{{ controller_hostname }}:35357/v2.0
+      internal_url: http://{{ controller_hostname }}:5000/v2.0
+      token: "{{ keystone_admin_token }}"
+      state: present
+
+
+# Creating a project and users for the OpenStack Services
+
+- name: create admin project
+  keystone_user:
+      tenant: admin
+      tenant_description: "Admin project"
+      token: "{{ keystone_admin_token }}"
+
+- name: create admin user
+  keystone_user:
+      user: admin
+      tenant: admin
+      password: "{{ admin_password }}"
+      token: "{{ keystone_admin_token }}"
+
+- name: add the admin role to the admin user
+  keystone_user:
+      role: admin
+      user: admin
+      tenant: admin
+      token: "{{ keystone_admin_token }}"
+
+- name: create service project
+  keystone_user:
+      tenant: service
+      tenant_description: "Service project"
+      token: "{{ keystone_admin_token }}"

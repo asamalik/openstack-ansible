@@ -1,0 +1,17 @@
+---
+# handlers file for cinder-controller
+- name: populate the storage service database
+  sudo: yes
+  sudo_user: cinder
+  command: cinder-manage db sync
+  notify:
+    - restart storage services
+
+- name: restart compute api service
+  service: name=openstack-nova-api state=restarted enabled=yes
+
+- name: restart storage services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+    - openstack-cinder-api
+    - openstack-cinder-scheduler

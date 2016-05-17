@@ -1,0 +1,21 @@
+---
+# handlers file for neutron-controller
+- name: restart the network.service
+  service: name=network state=restarted enabled=yes
+
+- name: populate the network service database
+  sudo: yes
+  sudo_user: neutron
+  command: 'neutron-db-manage --config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head'
+  notify:
+    - restart and enable network services
+
+- name: restart and enable network services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+      - openstack-nova-api
+      - neutron-server
+      - neutron-linuxbridge-agent
+      - neutron-dhcp-agent
+      - neutron-metadata-agent
+      - neutron-l3-agent

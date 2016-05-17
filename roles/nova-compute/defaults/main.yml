@@ -1,0 +1,7 @@
+---
+# defaults file for nova-compute
+rabbit_password: redhat
+# management network
+compute_ip: 10.0.0.31
+nova_password: redhat
+controller_hostname: controller

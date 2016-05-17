@@ -1,0 +1,152 @@
+---
+# tasks file for nova-controller
+- name: add nova database
+  mysql_db: login_user=root login_password={{ mysql_root_password }}
+            db=nova
+            state=present
+
+- name: grant access to the nova database
+  mysql_user:
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+      name: nova
+      password: "{{ nova_db_password }}"
+      host: "{{ controller_hostname }}"
+      priv: "nova.*:ALL,grant"
+      state: "present"
+
+- name: create service project
+  keystone_user:
+      tenant: service
+      tenant_description: "Service project"
+      token: "{{ keystone_admin_token }}"
+
+- name: create nova user
+  keystone_user:
+      user: nova
+      tenant: service
+      password: "{{ nova_password }}"
+      token: "{{ keystone_admin_token }}"
+
+- name: add the admin role to the admin user
+  keystone_user:
+      role: admin
+      user: nova
+      tenant: service
+      token: "{{ keystone_admin_token }}"
+
+- name: add nova service
+  keystone_service:
+      name: nova
+      description: "OpenStack Compute"
+      token: "{{ keystone_admin_token }}"
+      service_type: compute
+      state: present
+
+- name: add nova endpoints
+  keystone_endpoint:
+      service_name: nova
+      region: RegionOne
+      public_url: "http://{{ controller_hostname }}:8774/v2/%(tenant_id)s"
+      admin_url: "http://{{ controller_hostname }}:8774/v2/%(tenant_id)s"
+      internal_url: "http://{{ controller_hostname }}:8774/v2/%(tenant_id)s"
+      token: "{{ keystone_admin_token }}"
+      state: present
+
+- name: Packages
+  yum: name={{ item }} state=present
+  with_items:
+      - openstack-nova-api
+      - openstack-nova-cert
+      - openstack-nova-conductor
+      - openstack-nova-console
+      - openstack-nova-novncproxy
+      - openstack-nova-scheduler
+      - python-novaclient
+
+- name: configuration
+  ini_file:
+      dest: /etc/nova/nova.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: database
+      k: connection
+      v: "mysql://nova:{{ nova_db_password }}@{{ controller_hostname }}/nova"
+    - s: DEFAULT
+      k: rpc_backend
+      v: rabbit
+    - s: oslo_messaging_rabbit
+      k: rabbit_host
+      v: "{{ controller_hostname }}"
+    - s: oslo_messaging_rabbit
+      k: rabbit_userid
+      v: openstack
+    - s: oslo_messaging_rabbit
+      k: rabbit_password
+      v: "{{ rabbit_password }}"
+    - s: DEFAULT
+      k: auth_strategy
+      v: keystone
+    - s: keystone_authtoken
+      k: auth_uri
+      v: http://{{ controller_hostname }}:5000
+    - s: keystone_authtoken
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: keystone_authtoken
+      k: auth_plugin
+      v: password
+    - s: keystone_authtoken
+      k: project_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: user_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: project_name
+      v: service
+    - s: keystone_authtoken
+      k: username
+      v: nova
+    - s: keystone_authtoken
+      k: password
+      v: "{{ nova_password }}"
+    - s: DEFAULT
+      k: my_ip
+      v: "{{ controller_ip }}"
+    - s: DEFAULT
+      k: network_api_class
+      v: nova.network.neutronv2.api.API
+    - s: DEFAULT
+      k: security_group_api
+      v: neutron
+    - s: DEFAULT
+      k: linuxnet_interface_driver
+      v: nova.network.linux_net.NeutronLinuxBridgeInterfaceDriver
+    - s: DEFAULT
+      k: firewall_driver
+      v: nova.virt.firewall.NoopFirewallDriver
+    - s: vnc
+      k: vncserver_listen
+      v: "{{ controller_ip }}"
+    - s: vnc
+      k: vncserver_proxyclient_address
+      v: "{{ controller_ip }}"
+    - s: glance
+      k: host
+      v: "{{ controller_hostname }}"
+    - s: oslo_concurrency
+      k: lock_path
+      v: /var/lib/nova/tmp
+    - s: DEFAULT
+      k: enabled_apis
+      v: osapi_compute,metadata
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+  notify:
+    - populate the nova service database
+
+- meta: flush_handlers

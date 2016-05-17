@@ -1,0 +1,7 @@
+---
+# defaults file for glance
+glance_db_password: redhat
+glance_password: redhat
+mysql_root_password: redhat
+keystone_admin_token: keystone_admin_token
+controller_hostname: controller

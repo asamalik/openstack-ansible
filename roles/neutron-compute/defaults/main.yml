@@ -1,0 +1,9 @@
+---
+# defaults file for neutron-compute
+controller_hostname: controller
+rabbit_password: redhat
+neutron_password: redhat
+# VM network
+public_interface_name: eth2
+# management network
+overlay_interface_ip: 10.0.0.31

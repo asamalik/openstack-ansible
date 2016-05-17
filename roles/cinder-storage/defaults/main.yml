@@ -1,0 +1,9 @@
+---
+# defaults file for cinder-storage
+controller_hostname: controller
+cinder_db_password: redhat
+rabbit_password: redhat
+cinder_password: redhat
+management_ip: 10.0.0.41
+cinder_volume_group: cinder-volumes
+cinder_partition: /dev/sdb

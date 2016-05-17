@@ -1,0 +1,15 @@
+---
+# tasks file for dashboard
+- name: Packages
+  yum: name={{ item }} state=present
+  with_items:
+    - openstack-dashboard
+
+- name: config file
+  template:
+    src: local_settings
+    dest: /etc/openstack-dashboard/local_settings
+  notify:
+    - restart and enable dashboard services
+
+- meta: flush_handlers

@@ -1,0 +1,408 @@
+---
+# tasks file for neutron-controller
+- name: configure public interface
+  lineinfile:
+      dest: "/etc/sysconfig/network-scripts/ifcfg-{{ public_interface_name }}"
+      regexp: "{{ item.regexp }}"
+      line: "{{ item.line }}"
+      state: "{{ item.state }}"
+  with_items:
+      - regexp: "^TYPE"
+        line: TYPE=Ethernet
+        state: present
+      - regexp: "^BOOTPROTO"
+        line: 'BOOTPROTO="none"'
+        state: present
+      - regexp: "^IPADDR"
+        line: ""
+        state: absent
+      - regexp: "^NETMASK"
+        line: ""
+        state: absent
+      - regexp: "^PEERDNS"
+        line: ""
+        state: absent
+  notify:
+    - restart the network.service
+
+- meta: flush_handlers
+
+- name: add neutron database
+  mysql_db: login_user=root login_password={{ mysql_root_password }}
+            db=neutron
+            state=present
+
+- name: grant access to the neutron database
+  mysql_user:
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+      name: neutron
+      password: "{{ neutron_db_password }}"
+      host: "{{ controller_hostname }}"
+      priv: "neutron.*:ALL,grant"
+      state: "present"
+
+- name: create service project
+  keystone_user:
+      tenant: service
+      tenant_description: "Service project"
+      token: "{{ keystone_admin_token }}"
+
+- name: create neutron user
+  keystone_user:
+      user: neutron
+      tenant: service
+      password: "{{ neutron_password }}"
+      token: "{{ keystone_admin_token }}"
+
+- name: add the admin role to the admin user
+  keystone_user:
+      role: admin
+      user: neutron
+      tenant: service
+      token: "{{ keystone_admin_token }}"
+
+- name: add neutron service
+  keystone_service:
+      name: neutron
+      description: "OpenStack Compute"
+      token: "{{ keystone_admin_token }}"
+      service_type: network
+      state: present
+
+- name: add neutron endpoints
+  keystone_endpoint:
+      service_name: neutron
+      region: RegionOne
+      public_url: http://{{ controller_hostname }}:9696
+      admin_url: http://{{ controller_hostname }}:9696
+      internal_url: http://{{ controller_hostname }}:9696
+      token: "{{ keystone_admin_token }}"
+      state: present
+
+- name: Packages
+  yum: name={{ item }} state=present
+  with_items:
+    - openstack-neutron
+    - openstack-neutron-ml2
+    - openstack-neutron-linuxbridge
+    - python-neutronclient
+    - ebtables
+    - ipset
+
+- name: configuration
+  ini_file:
+      dest: /etc/neutron/neutron.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: database
+      k: connection
+      v: mysql://neutron:{{ neutron_db_password }}@{{ controller_hostname }}/neutron
+    - s: DEFAULT
+      k: core_plugin
+      v: ml2
+    - s: DEFAULT
+      k: service_plugins
+      v: router
+    - s: DEFAULT
+      k: allow_overlapping_ips
+      v: "True"
+    - s: DEFAULT
+      k: rpc_backend
+      v: rabbit
+    - s: oslo_messaging_rabbit
+      k: rabbit_host
+      v: "{{ controller_hostname }}"
+    - s: oslo_messaging_rabbit
+      k: rabbit_userid
+      v: openstack
+    - s: oslo_messaging_rabbit
+      k: rabbit_password
+      v: "{{ rabbit_password }}"
+    - s: DEFAULT
+      k: auth_strategy
+      v: keystone
+    - s: keystone_authtoken
+      k: auth_uri
+      v: http://{{ controller_hostname }}:5000
+    - s: keystone_authtoken
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: keystone_authtoken
+      k: auth_plugin
+      v: password
+    - s: keystone_authtoken
+      k: project_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: user_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: project_name
+      v: service
+    - s: keystone_authtoken
+      k: username
+      v: neutron
+    - s: keystone_authtoken
+      k: password
+      v: "{{ neutron_password }}"
+    - s: DEFAULT
+      k: notify_nova_on_port_status_changes
+      v: "True"
+    - s: DEFAULT
+      k: notify_nova_on_port_data_changes
+      v: "True"
+    - s: DEFAULT
+      k: nova_url
+      v: http://{{ controller_hostname }}:8774/v2
+    - s: nova
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: nova
+      k: auth_plugin
+      v: password
+    - s: nova
+      k: project_domain_id
+      v: default
+    - s: nova
+      k: user_domain_id
+      v: default
+    - s: nova
+      k: region_name
+      v: RegionOne
+    - s: nova
+      k: project_name
+      v: service
+    - s: nova
+      k: username
+      v: nova
+    - s: nova
+      k: password
+      v: "{{ nova_password }}"
+    - s: oslo_concurrency
+      k: lock_path
+      v: /var/lib/neutron/tmp
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+  notify:
+    - populate the network service database
+
+- name: configuration of the Modular Llayer 2 plugin
+  ini_file:
+      dest: /etc/neutron/plugins/ml2/ml2_conf.ini
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: ml2
+      k: type_drivers
+      v: flat,vlan,vxlan
+    - s: ml2
+      k: tenant_network_types
+      v: vxlan
+    - s: ml2
+      k: mechanism_drivers
+      v: linuxbridge,l2population
+    - s: ml2
+      k: extension_drivers
+      v: port_security
+    - s: ml2_type_flat
+      k: flat_networks
+      v: public
+    - s: ml2_type_vxlan
+      k: vni_ranges
+      v: 1:1000
+    - s: securitygroup
+      k: enable_ipset
+      v: "True"
+  notify:
+    - populate the network service database
+
+- name: configuration of the linux bridge agent
+  ini_file:
+      dest: /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: linux_bridge
+      k: physical_interface_mappings
+      v: public:{{ public_interface_name }}
+    - s: vxlan
+      k: enable_vxlan
+      v: "True"
+    - s: vxlan
+      k: local_ip
+      v: "{{ overlay_interface_ip }}"
+    - s: vxlan
+      k: l2_population
+      v: "True"
+    - s: agent
+      k: prevent_arp_spoofing
+      v: "True"
+    - s: securitygroup
+      k: enable_security_group
+      v: "True"
+    - s: securitygroup
+      k: firewall_driver
+      v: neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+  notify:
+    - populate the network service database
+
+- name: configuration of the layer-3 agent
+  ini_file:
+      dest: /etc/neutron/l3_agent.ini
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: DEFAULT
+      k: interface_driver
+      v: neutron.agent.linux.interface.BridgeInterfaceDriver
+    - s: DEFAULT
+      k: external_network_bridge
+      v: ""
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+  notify:
+    - populate the network service database
+
+- name: configuration of the DHCP agent
+  ini_file:
+      dest: /etc/neutron/dhcp_agent.ini
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: DEFAULT
+      k: interface_driver
+      v: neutron.agent.linux.interface.BridgeInterfaceDriver
+    - s: DEFAULT
+      k: dhcp_driver
+      v: neutron.agent.linux.dhcp.Dnsmasq
+    - s: DEFAULT
+      k: enable_isolated_metadata
+      v: "True"
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+    - s: DEFAULT
+      k: dnsmasq_config_file
+      v: /etc/neutron/dnsmasq-neutron.conf
+  notify:
+    - populate the network service database
+
+- name: create a config file to enable DHCP MTU
+  file:
+      path: /etc/neutron/dnsmasq-neutron.conf
+      state: touch
+  notify:
+    - populate the network service database
+
+- name: set the DHCP MTU to 1450
+  lineinfile:
+      dest: /etc/neutron/dnsmasq-neutron.conf
+      regexp: "^dhcp-option-force"
+      value: dhcp-option-force=26,1450
+  notify:
+    - populate the network service database
+
+- name: configuration of the metadata agent
+  ini_file:
+      dest: /etc/neutron/metadata_agent.ini
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: DEFAULT
+      k: auth_uri
+      v: http://{{ controller_hostname }}:5000
+    - s: DEFAULT
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: DEFAULT
+      k: auth_region
+      v: RegionOne
+    - s: DEFAULT
+      k: auth_plugin
+      v: password
+    - s: DEFAULT
+      k: project_domain_id
+      v: default
+    - s: DEFAULT
+      k: user_domain_id
+      v: default
+    - s: DEFAULT
+      k: project_name
+      v: service
+    - s: DEFAULT
+      k: username
+      v: neutron
+    - s: DEFAULT
+      k: password
+      v: "{{ neutron_password }}"
+    - s: DEFAULT
+      k: nova_metadata_ip
+      v: "{{ controller_hostname }}"
+    - s: DEFAULT
+      k: metadata_proxy_shared_secret
+      v: "{{ metadata_secret }}"
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+  notify:
+    - populate the network service database
+
+- name: configuration of Nova to use Networking
+  ini_file:
+      dest: /etc/nova/nova.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: neutron
+      k: url
+      v: http://{{ controller_hostname }}:9696
+    - s: neutron
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: neutron
+      k: auth_plugin
+      v: password
+    - s: neutron
+      k: project_domain_id
+      v: default
+    - s: neutron
+      k: user_domain_id
+      v: default
+    - s: neutron
+      k: project_name
+      v: service
+    - s: neutron
+      k: username
+      v: neutron
+    - s: neutron
+      k: password
+      v: "{{ neutron_password }}"
+    - s: neutron
+      k: service_metadata_proxy
+      v: "True"
+    - s: neutron
+      k: metadata_proxy_shared_secret
+      v: "{{ metadata_secret }}"
+  notify:
+    - populate the network service database
+
+- name: create symlink
+  file:
+      state: link
+      src: /etc/neutron/plugins/ml2/ml2_conf.ini
+      path: /etc/neutron/plugin.ini
+  notify:
+    - populate the network service database
+
+- meta: flush_handlers

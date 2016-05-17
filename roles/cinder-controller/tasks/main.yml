@@ -1,0 +1,159 @@
+---
+# tasks file for cinder-controller
+- name: add cinder database
+  mysql_db: login_user=root login_password={{ mysql_root_password }}
+            db=cinder
+            state=present
+
+
+- name: grant access to the cinder database
+  mysql_user:
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+      name: cinder
+      password: "{{ cinder_db_password }}"
+      host: "{{ item }}"
+      priv: "cinder.*:ALL,grant"
+      state: "present"
+  with_items:
+      - "localhost"
+      - "%"
+
+- name: create service project
+  keystone_user:
+      tenant: service
+      tenant_description: "Service project"
+      token: "{{ keystone_admin_token }}"
+
+- name: create cinder user
+  keystone_user:
+      user: cinder
+      tenant: service
+      password: "{{ cinder_password }}"
+      token: "{{ keystone_admin_token }}"
+
+- name: add the admin role to the admin user
+  keystone_user:
+      role: admin
+      user: cinder
+      tenant: service
+      token: "{{ keystone_admin_token }}"
+
+- name: add cinder service
+  keystone_service:
+      name: cinder
+      description: "OpenStack Compute"
+      token: "{{ keystone_admin_token }}"
+      service_type: volume
+      state: present
+
+- name: add cinderv2 service
+  keystone_service:
+      name: cinderv2
+      description: "OpenStack Compute"
+      token: "{{ keystone_admin_token }}"
+      service_type: volumev2
+      state: present
+
+- name: add cinder endpoints
+  keystone_endpoint:
+      service_name: cinder
+      region: RegionOne
+      public_url: http://{{ controller_hostname }}:8776/v1/%(tenant_id)s
+      admin_url: http://{{ controller_hostname }}:8776/v1/%(tenant_id)s
+      internal_url: http://{{ controller_hostname }}:8776/v1/%(tenant_id)s
+      token: "{{ keystone_admin_token }}"
+      state: present
+
+- name: add cinder endpoints
+  keystone_endpoint:
+      service_name: cinderv2
+      region: RegionOne
+      public_url: http://{{ controller_hostname }}:8776/v2/%(tenant_id)s
+      admin_url: http://{{ controller_hostname }}:8776/v2/%(tenant_id)s
+      internal_url: http://{{ controller_hostname }}:8776/v2/%(tenant_id)s
+      token: "{{ keystone_admin_token }}"
+      state: present
+
+- name: Packages
+  yum: name={{ item }} state=present
+  with_items:
+      - openstack-cinder
+      - python-cinderclient
+
+- name: configuration
+  ini_file:
+      dest: /etc/cinder/cinder.conf
+      section: "{{ item.section }}"
+      option: "{{ item.key }}"
+      value: "{{ item.value }}"
+  with_items:
+      - section: database
+        key: connection
+        value: mysql://cinder:{{ cinder_db_password }}@{{ controller_hostname }}/cinder
+      - section: DEFAULT
+        key: rpc_backend
+        value: rabbit
+      - section: oslo_messaging_rabbit
+        key: rabbit_host
+        value: "{{ controller_hostname }}"
+      - section: oslo_messaging_rabbit
+        key: rabbit_userid
+        value: openstack
+      - section: oslo_messaging_rabbit
+        key: rabbit_password
+        value: "{{ rabbit_password }}"
+      - section: DEFAULT
+        key: auth_strategy
+        value: keystone
+      - section: keystone_authtoken
+        key: auth_uri
+        value: http://{{ controller_hostname }}:5000
+      - section: keystone_authtoken
+        key: auth_url
+        value: http://{{ controller_hostname }}:35357
+      - section: keystone_authtoken
+        key: auth_plugin
+        value: password
+      - section: keystone_authtoken
+        key: project_domain_id
+        value: default
+      - section: keystone_authtoken
+        key: user_domain_id
+        value: default
+      - section: keystone_authtoken
+        key: project_name
+        value: service
+      - section: keystone_authtoken
+        key: username
+        value: cinder
+      - section: keystone_authtoken
+        key: password
+        value: "{{ cinder_password }}"
+      - section: DEFAULT
+        key: my_ip
+        value: "{{ controller_ip }}"
+      - section: oslo_concurrency
+        key: lock_path
+        value: /var/lib/cinder/tmp
+      - section: DEFAULT
+        key: verbose
+        value: "True"
+  notify:
+    - populate the storage service database
+    - restart storage services
+
+
+- name: configuration
+  ini_file:
+      dest: /etc/nova/nova.conf
+      section: "{{ item.section }}"
+      option: "{{ item.key }}"
+      value: "{{ item.value }}"
+  with_items:
+      - section: cinder
+        key: os_region_name
+        value: RegionOne
+  notify:
+    - restart compute api service
+    - restart storage services

@@ -1,0 +1,11 @@
+---
+# tasks file for controller-basic
+- name: OpenStack repository
+  yum: name="centos-release-openstack-liberty" state=present
+
+- name: OpenStack init packages
+  yum: name={{ item }} state=present
+  with_items:
+    - python-openstackclient
+    - openstack-selinux
+    - chrony

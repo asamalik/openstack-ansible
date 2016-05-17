@@ -1,0 +1,18 @@
+---
+# handlers file for nova-controller
+- name: populate the nova service database
+  sudo: yes
+  sudo_user: nova
+  command: 'nova-manage db sync'
+  notify:
+    - restart and enable nova services
+
+- name: restart and enable nova services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+    - openstack-nova-api
+    - openstack-nova-cert
+    - openstack-nova-consoleauth
+    - openstack-nova-scheduler
+    - openstack-nova-conductor
+    - openstack-nova-novncproxy

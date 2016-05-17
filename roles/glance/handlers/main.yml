@@ -1,0 +1,16 @@
+---
+# handlers file for glance
+- name: populate the image service database
+  sudo: yes
+  sudo_user: glance
+  command: 'glance-manage db_sync'
+  notify:
+    - restart and enable image services
+
+- name: restart and enable image services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+    - openstack-glance-api
+    - openstack-glance-registry
+
+- meta: flush_handlers

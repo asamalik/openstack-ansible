@@ -1,0 +1,5 @@
+---
+# defaults file for sql-database
+mysql_root_password: "redhat"
+controller_management_ip: 10.0.0.11
+controller_hostname: controller

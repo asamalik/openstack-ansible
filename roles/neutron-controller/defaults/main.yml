@@ -1,0 +1,16 @@
+---
+# defaults file for neutron-controller
+mysql_root_password: redhat
+neutron_db_password: redhat
+neutron_password: redhat
+keystone_admin_token: keystone_admin_token
+controller_hostname: controller
+nova_password: redhat
+# management network
+management_interface_name: eth1
+# VM network
+public_interface_name: eth2
+# management network
+overlay_interface_ip: 10.0.0.11
+metadata_secret: metadata_secret
+rabbit_password: redhat

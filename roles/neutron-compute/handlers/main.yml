@@ -1,0 +1,10 @@
+---
+# handlers file for neutron-compute
+- name: restart and enable network services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+    - openstack-nova-compute
+    - neutron-linuxbridge-agent
+
+- name: restart the network.service
+  service: name=network state=restarted enabled=yes

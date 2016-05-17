@@ -1,0 +1,188 @@
+---
+# tasks file for glance
+- name: Identity service
+  yum: name={{ item }} state=present
+  with_items:
+    - openstack-glance
+    - python-glance
+    - python-glanceclient
+
+
+# This service requires an SQL database
+
+- name: add glance database
+  mysql_db: login_user=root login_password={{ mysql_root_password }}
+            db=glance
+            state=present
+
+- name: grant access to the glance database
+  mysql_user:
+      login_user: root
+      login_password: "{{ mysql_root_password }}"
+      name: glance
+      password: "{{ glance_db_password }}"
+      host: "{{ controller_hostname }}"
+      priv: "glance.*:ALL,grant"
+      state: "present"
+
+
+# Every service needs a project + user
+
+- name: create service project
+  keystone_user:
+      tenant: service
+      tenant_description: "Service project"
+      token: "{{ keystone_admin_token }}"
+
+- name: create glance user
+  keystone_user:
+      user: glance
+      tenant: service
+      password: "{{ glance_password }}"
+      token: "{{ keystone_admin_token }}"
+
+- name: add the admin role to the admin user
+  keystone_user:
+      role: admin
+      user: glance
+      tenant: service
+      token: "{{ keystone_admin_token }}"
+
+
+# Every OpenStack service needs to be registered in Keystone
+
+- name: add glance service
+  keystone_service:
+      name: glance
+      description: "OpenStack Image service"
+      token: "{{ keystone_admin_token }}"
+      service_type: image
+      state: present
+
+
+# And every OpenStack service needs three endpoints to be registered
+#   - public
+#   - internal
+#   - admin
+
+- name: add glance endpoints
+  keystone_endpoint:
+      service_name: glance
+      region: RegionOne
+      public_url: http://{{ controller_hostname }}:9292
+      admin_url: http://{{ controller_hostname }}:9292
+      internal_url: http://{{ controller_hostname }}:9292
+      token: "{{ keystone_admin_token }}"
+      state: present
+
+
+# Basic configuration of glance-api including
+#   - database access
+#   - keystone authentication
+#
+# This also configures local filesystem as a backend for the Image service.
+
+- name: configuration
+  ini_file:
+      dest: /etc/glance/glance-api.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: database
+      k: connection
+      v: mysql://glance:{{ glance_db_password }}@{{ controller_hostname }}/glance
+    - s: keystone_authtoken
+      k: auth_uri
+      v: http://{{ controller_hostname }}:5000
+    - s: keystone_authtoken
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: keystone_authtoken
+      k: auth_plugin
+      v: password
+    - s: keystone_authtoken
+      k: project_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: user_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: project_name
+      v: service
+    - s: keystone_authtoken
+      k: username
+      v: glance
+    - s: keystone_authtoken
+      k: password
+      v: "{{ glance_password }}"
+    - s: paste_deploy
+      k: flavor
+      v: keystone
+    - s: glance_store
+      k: default_store
+      v: file
+    - s: glance_store
+      k: filesystem_store_datadir
+      v: /var/lib/glance/images/
+    - s: DEFAULT
+      k: notification_driver
+      v: noop
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+  notify:
+    - populate the image service database
+
+
+# Basic configuration of glance-registry including
+#   - database access
+#   - keystone authentication
+
+- name: configuration
+  ini_file:
+      dest: /etc/glance/glance-registry.conf
+      section: "{{ item.s }}"
+      option: "{{ item.k }}"
+      value: "{{ item.v }}"
+  with_items:
+    - s: database
+      k: connection
+      v: mysql://glance:{{ glance_db_password }}@{{ controller_hostname }}/glance
+    - s: keystone_authtoken
+      k: auth_uri
+      v: http://{{ controller_hostname }}:5000
+    - s: keystone_authtoken
+      k: auth_url
+      v: http://{{ controller_hostname }}:35357
+    - s: keystone_authtoken
+      k: auth_plugin
+      v: password
+    - s: keystone_authtoken
+      k: project_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: user_domain_id
+      v: default
+    - s: keystone_authtoken
+      k: project_name
+      v: service
+    - s: keystone_authtoken
+      k: username
+      v: glance
+    - s: keystone_authtoken
+      k: password
+      v: "{{ glance_password }}"
+    - s: paste_deploy
+      k: flavor
+      v: keystone
+    - s: DEFAULT
+      k: notification_driver
+      v: noop
+    - s: DEFAULT
+      k: verbose
+      v: "True"
+  notify:
+    - populate the image service database
+
+- meta: flush_handlers

@@ -1,0 +1,19 @@
+---
+# tasks file for rabbit
+- name: Rabbit
+  yum: name={{ item }} state=present
+  with_items:
+    - "rabbitmq-server"
+  notify:
+    - restart and enable rabbit service
+
+- meta: flush_handlers
+
+- name: rabbitmq user
+  rabbitmq_user: user=openstack
+                 password="{{ rabbit_password }}"
+                 vhost='/'
+                 configure_priv='.*'
+                 read_priv='.*'
+                 write_priv='.*'
+                 state=present

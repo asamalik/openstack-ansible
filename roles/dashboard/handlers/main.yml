@@ -1,0 +1,7 @@
+---
+# handlers file for dashboard
+- name: restart and enable dashboard services
+  service: name={{ item }} state=restarted enabled=yes
+  with_items:
+    - httpd
+    - memcached
